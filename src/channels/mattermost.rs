@@ -321,7 +321,13 @@ impl MattermostChannel {
             channel: "mattermost".to_string(),
             #[allow(clippy::cast_sign_loss)]
             timestamp: (create_at / 1000) as u64,
-            thread_ts: None,
+            thread_ts: if !root_id.is_empty() {
+                Some(root_id.to_string())
+            } else if self.thread_replies {
+                Some(id.to_string())
+            } else {
+                None
+            },
         })
     }
 }
@@ -612,6 +618,57 @@ mod tests {
             .parse_mattermost_post(&post, "bot123", "botname", 1_500_000_000_000_i64, "chan789")
             .unwrap();
         assert_eq!(msg.reply_target, "chan789:root789"); // Stays in existing thread
+    }
+
+    #[test]
+    fn mattermost_thread_ts_set_to_root_id_in_existing_thread() {
+        let ch = make_channel(vec!["*".into()], false);
+        let post = json!({
+            "id": "post123",
+            "user_id": "user456",
+            "message": "reply in thread",
+            "create_at": 1_600_000_000_000_i64,
+            "root_id": "root789"
+        });
+
+        let msg = ch
+            .parse_mattermost_post(&post, "bot123", "botname", 1_500_000_000_000_i64, "chan789")
+            .unwrap();
+        assert_eq!(msg.thread_ts.as_deref(), Some("root789"));
+    }
+
+    #[test]
+    fn mattermost_thread_ts_set_to_post_id_when_thread_replies_enabled() {
+        let ch = make_channel(vec!["*".into()], true);
+        let post = json!({
+            "id": "post123",
+            "user_id": "user456",
+            "message": "top-level message",
+            "create_at": 1_600_000_000_000_i64,
+            "root_id": ""
+        });
+
+        let msg = ch
+            .parse_mattermost_post(&post, "bot123", "botname", 1_500_000_000_000_i64, "chan789")
+            .unwrap();
+        assert_eq!(msg.thread_ts.as_deref(), Some("post123"));
+    }
+
+    #[test]
+    fn mattermost_thread_ts_none_when_thread_replies_disabled_and_no_root() {
+        let ch = make_channel(vec!["*".into()], false);
+        let post = json!({
+            "id": "post123",
+            "user_id": "user456",
+            "message": "top-level message",
+            "create_at": 1_600_000_000_000_i64,
+            "root_id": ""
+        });
+
+        let msg = ch
+            .parse_mattermost_post(&post, "bot123", "botname", 1_500_000_000_000_i64, "chan789")
+            .unwrap();
+        assert_eq!(msg.thread_ts, None);
     }
 
     // ── mention_only tests ────────────────────────────────────────
