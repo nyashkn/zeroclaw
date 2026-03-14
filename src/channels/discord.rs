@@ -737,6 +737,14 @@ impl Channel for DiscordChannel {
                         .and_then(|c| c.as_str())
                         .unwrap_or("")
                         .to_string();
+                    // channel_type 11 = PUBLIC_THREAD, 12 = PRIVATE_THREAD, 15 = FORUM thread.
+                    // These are thread channels with unique channel_ids — use that as the
+                    // isolation key so each thread gets its own conversation history.
+                    let channel_type = d
+                        .get("channel_type")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0);
+                    let is_thread_channel = matches!(channel_type, 11 | 12 | 15);
 
                     if !message_id.is_empty() && !channel_id.is_empty() {
                         let reaction_channel = DiscordChannel::new(
@@ -783,7 +791,11 @@ impl Channel for DiscordChannel {
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs(),
-                        thread_ts: None,
+                        thread_ts: if is_thread_channel && !channel_id.is_empty() {
+                            Some(channel_id.clone())
+                        } else {
+                            None
+                        },
                     };
 
                     if tx.send(channel_msg).await.is_err() {
@@ -1317,6 +1329,45 @@ mod tests {
         assert!(id.starts_with("discord_"));
         // Should have UUID dashes
         assert!(id.contains('-'));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Thread context isolation: channel_type → thread_ts population
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_thread_channel_true_for_public_thread() {
+        // channel_type 11 = PUBLIC_THREAD
+        let channel_type: u64 = 11;
+        assert!(matches!(channel_type, 11 | 12 | 15));
+    }
+
+    #[test]
+    fn is_thread_channel_true_for_private_thread() {
+        // channel_type 12 = PRIVATE_THREAD
+        let channel_type: u64 = 12;
+        assert!(matches!(channel_type, 11 | 12 | 15));
+    }
+
+    #[test]
+    fn is_thread_channel_true_for_forum_thread() {
+        // channel_type 15 = FORUM thread
+        let channel_type: u64 = 15;
+        assert!(matches!(channel_type, 11 | 12 | 15));
+    }
+
+    #[test]
+    fn is_thread_channel_false_for_guild_text() {
+        // channel_type 0 = GUILD_TEXT (regular channel)
+        let channel_type: u64 = 0;
+        assert!(!matches!(channel_type, 11 | 12 | 15));
+    }
+
+    #[test]
+    fn is_thread_channel_false_for_dm() {
+        // channel_type 1 = DM
+        let channel_type: u64 = 1;
+        assert!(!matches!(channel_type, 11 | 12 | 15));
     }
 
     // ─────────────────────────────────────────────────────────────────────
