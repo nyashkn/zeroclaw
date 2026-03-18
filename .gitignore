@@ -16,7 +16,8 @@ site/public/docs-content/
 gh-pages/
 
 .idea
-.claude
+# Claude Code — ignore local/secret settings, track commands and skills
+.claude/settings.local.json
 
 # Environment files (may contain secrets)
 .env
