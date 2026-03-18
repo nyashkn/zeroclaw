@@ -5212,6 +5212,15 @@ pub(crate) async fn handle_command(command: crate::ChannelCommands, config: &Con
         crate::ChannelCommands::BindTelegram { identity } => {
             bind_telegram_identity(config, &identity).await
         }
+        crate::ChannelCommands::Send {
+            message,
+            channel_id,
+            recipient,
+        } => {
+            anyhow::bail!(
+                "Send to '{channel_id}' recipient '{recipient}' message '{message}' — use the gateway API or zeroclaw channel start"
+            )
+        }
     }
 }
 

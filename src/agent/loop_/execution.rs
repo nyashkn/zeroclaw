@@ -19,6 +19,7 @@ async fn execute_one_tool(
 ) -> Result<ToolExecutionOutcome> {
     observer.record_event(&ObserverEvent::ToolCallStart {
         tool: call_name.to_string(),
+        arguments: Some(call_arguments.to_string()),
     });
     let start = Instant::now();
 

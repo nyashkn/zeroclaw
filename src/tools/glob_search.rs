@@ -59,7 +59,7 @@ impl Tool for GlobSearchTool {
 
         // Security: reject absolute paths unless under an explicit allowed root.
         if (pattern.starts_with('/') || pattern.starts_with('\\'))
-            && !self.security.is_under_allowed_root(pattern)
+            && !self.security.is_path_allowed(pattern)
         {
             return Ok(ToolResult {
                 success: false,
@@ -90,7 +90,7 @@ impl Tool for GlobSearchTool {
         // and absolute paths correctly.
         let full_pattern = self
             .security
-            .resolve_tool_path(pattern)
+            .resolve_user_supplied_path(pattern)
             .to_string_lossy()
             .to_string();
 

@@ -173,7 +173,7 @@ impl Tool for ContentSearchTool {
         // --- Path security checks ---
         // Reject absolute paths unless they fall under an explicit allowed root.
         if std::path::Path::new(search_path).is_absolute()
-            && !self.security.is_under_allowed_root(search_path)
+            && !self.security.is_path_allowed(search_path)
         {
             return Ok(ToolResult {
                 success: false,
@@ -210,7 +210,7 @@ impl Tool for ContentSearchTool {
         }
 
         // --- Resolve search directory ---
-        let resolved_path = self.security.resolve_tool_path(search_path);
+        let resolved_path = self.security.resolve_user_supplied_path(search_path);
 
         let resolved_canon = match std::fs::canonicalize(&resolved_path) {
             Ok(p) => p,
