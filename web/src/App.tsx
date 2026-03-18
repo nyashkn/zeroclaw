@@ -7,23 +7,25 @@ import Tools from './pages/Tools';
 import Cron from './pages/Cron';
 import Integrations from './pages/Integrations';
 import Memory from './pages/Memory';
+import Devices from './pages/Devices';
 import Config from './pages/Config';
 import Cost from './pages/Cost';
 import Logs from './pages/Logs';
 import Doctor from './pages/Doctor';
 import { AuthProvider, useAuth } from './hooks/useAuth';
-import { DraftContext, useDraftStore } from './hooks/useDraft';
-import { setLocale, type Locale } from './lib/i18n';
+import { coerceLocale, setLocale, type Locale } from './lib/i18n';
+
+const LOCALE_STORAGE_KEY = 'zeroclaw:locale';
 
 // Locale context
 interface LocaleContextType {
-  locale: string;
-  setAppLocale: (locale: string) => void;
+  locale: Locale;
+  setAppLocale: (locale: Locale) => void;
 }
 
 export const LocaleContext = createContext<LocaleContextType>({
-  locale: 'tr',
-  setAppLocale: () => {},
+  locale: 'en',
+  setAppLocale: (_locale: Locale) => {},
 });
 
 export const useLocaleContext = () => useContext(LocaleContext);
@@ -48,23 +50,11 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'radial-gradient(ellipse at center, #0a0a20 0%, #050510 70%)' }}>
-      {/* Ambient glow */}
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full opacity-20 pointer-events-none" style={{ background: 'radial-gradient(circle, #0080ff 0%, transparent 70%)' }} />
-
-      <div className="relative glass-card p-8 w-full max-w-md animate-fade-in-scale">
-        {/* Top glow accent */}
-        <div className="absolute -top-px left-1/4 right-1/4 h-px" style={{ background: 'linear-gradient(90deg, transparent, #0080ff, transparent)' }} />
-
-        <div className="text-center mb-8">
-          <img
-            src="/_app/logo.png"
-            alt="ZeroClaw"
-            className="h-20 w-20 rounded-2xl object-cover mx-auto mb-4 animate-float"
-            style={{ boxShadow: '0 0 30px rgba(0,128,255,0.3)' }}
-          />
-          <h1 className="text-2xl font-bold text-gradient-blue mb-2">ZeroClaw</h1>
-          <p className="text-[#556080] text-sm">Enter the pairing code from your terminal</p>
+    <div className="pairing-shell min-h-screen flex items-center justify-center px-4">
+      <div className="pairing-card w-full max-w-md rounded-2xl p-8">
+        <div className="text-center mb-6">
+          <h1 className="mb-2 text-2xl font-semibold tracking-[0.16em] pairing-brand">ZEROCLAW</h1>
+          <p className="text-sm text-[#9bb8e8]">Enter the one-time pairing code from your terminal</p>
         </div>
         <form onSubmit={handleSubmit}>
           <input
@@ -72,24 +62,19 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="6-digit code"
-            className="input-electric w-full px-4 py-4 text-center text-2xl tracking-[0.3em] font-medium mb-4"
+            className="w-full rounded-xl border border-[#29509c] bg-[#071228]/90 px-4 py-3 text-center text-2xl tracking-[0.35em] text-white focus:border-[#4f83ff] focus:outline-none mb-4"
             maxLength={6}
             autoFocus
           />
           {error && (
-            <p className="text-[#ff4466] text-sm mb-4 text-center animate-fade-in">{error}</p>
+            <p className="mb-4 text-center text-sm text-rose-300">{error}</p>
           )}
           <button
             type="submit"
             disabled={loading || code.length < 6}
-            className="btn-electric w-full py-3.5 text-sm font-semibold tracking-wide"
+            className="electric-button w-full rounded-xl py-3 font-medium text-white disabled:opacity-50"
           >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Pairing...
-              </span>
-            ) : 'Pair'}
+            {loading ? 'Pairing...' : 'Pair'}
           </button>
         </form>
       </div>
@@ -98,13 +83,29 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
 }
 
 function AppContent() {
-  const { isAuthenticated, requiresPairing, loading, pair, logout } = useAuth();
-  const [locale, setLocaleState] = useState('tr');
-  const draftStore = useDraftStore();
+  const { isAuthenticated, loading, pair, logout } = useAuth();
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    if (typeof window === 'undefined') {
+      return 'en';
+    }
 
-  const setAppLocale = (newLocale: string) => {
+    const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+    if (saved) {
+      return coerceLocale(saved);
+    }
+
+    return coerceLocale(window.navigator.language);
+  });
+
+  useEffect(() => {
+    setLocale(locale);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    }
+  }, [locale]);
+
+  const setAppLocale = (newLocale: Locale) => {
     setLocaleState(newLocale);
-    setLocale(newLocale as Locale);
   };
 
   // Listen for 401 events to force logout
@@ -118,39 +119,38 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'radial-gradient(ellipse at center, #0a0a20 0%, #050510 70%)' }}>
-        <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="h-10 w-10 border-2 border-[#0080ff30] border-t-[#0080ff] rounded-full animate-spin" />
-          <p className="text-[#556080] text-sm">Connecting...</p>
+      <div className="pairing-shell min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="electric-loader h-10 w-10 rounded-full" />
+          <p className="text-[#a7c4f3]">Connecting...</p>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated && requiresPairing) {
+  if (!isAuthenticated) {
     return <PairingDialog onPair={pair} />;
   }
 
   return (
-    <DraftContext.Provider value={draftStore}>
-      <LocaleContext.Provider value={{ locale, setAppLocale }}>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/agent" element={<AgentChat />} />
-            <Route path="/tools" element={<Tools />} />
-            <Route path="/cron" element={<Cron />} />
-            <Route path="/integrations" element={<Integrations />} />
-            <Route path="/memory" element={<Memory />} />
-            <Route path="/config" element={<Config />} />
-            <Route path="/cost" element={<Cost />} />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/doctor" element={<Doctor />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
-      </LocaleContext.Provider>
-    </DraftContext.Provider>
+    <LocaleContext.Provider value={{ locale, setAppLocale }}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/agent" element={<AgentChat />} />
+          <Route path="/tools" element={<Tools />} />
+          <Route path="/cron" element={<Cron />} />
+          <Route path="/integrations" element={<Integrations />} />
+          <Route path="/memory" element={<Memory />} />
+          <Route path="/devices" element={<Devices />} />
+          <Route path="/config" element={<Config />} />
+          <Route path="/cost" element={<Cost />} />
+          <Route path="/logs" element={<Logs />} />
+          <Route path="/doctor" element={<Doctor />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </LocaleContext.Provider>
   );
 }
 

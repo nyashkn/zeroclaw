@@ -15,7 +15,7 @@ Triệu chứng:
 Khắc phục:
 
 ```bash
-./install.sh --install-rust
+./bootstrap.sh --install-rust
 ```
 
 Hoặc cài từ <https://rustup.rs/>.
@@ -29,7 +29,7 @@ Triệu chứng:
 Khắc phục:
 
 ```bash
-./install.sh --install-system-deps
+./bootstrap.sh --install-system-deps
 ```
 
 ### Build thất bại trên máy ít RAM / ít dung lượng
@@ -48,13 +48,13 @@ Nguyên nhân:
 Cách tốt nhất cho máy hạn chế tài nguyên:
 
 ```bash
-./install.sh --prefer-prebuilt
+./bootstrap.sh --prefer-prebuilt
 ```
 
 Chế độ chỉ dùng binary (không build từ nguồn):
 
 ```bash
-./install.sh --prebuilt-only
+./bootstrap.sh --prebuilt-only
 ```
 
 Nếu bắt buộc phải build từ nguồn trên máy yếu:
@@ -209,11 +209,16 @@ Xem log trên Linux:
 journalctl --user -u zeroclaw.service -f
 ```
 
-## URL cài đặt
+## Tương thích cài đặt cũ
+
+Cả hai cách vẫn hoạt động:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zeroclaw-labs/zeroclaw/master/install.sh | bash
+curl -fsSL https://zeroclawlabs.ai/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zeroclaw-labs/zeroclaw/main/scripts/install.sh | bash
 ```
+
+`install.sh` vẫn là điểm vào tương thích, chuyển tiếp/dự phòng về hành vi bootstrap cho các tài liệu/link cũ.
 
 ## Vẫn chưa giải quyết được?
 

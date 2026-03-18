@@ -93,17 +93,15 @@ Tự động hóa hỗ trợ việc triage và bảo vệ, nhưng trách nhiệm
 
 ## 3. Cài đặt repository bắt buộc
 
-Duy trì các quy tắc branch protection sau trên `master`:
+Duy trì các quy tắc branch protection sau trên `main`:
 
 - Yêu cầu status check trước khi merge.
 - Yêu cầu check `CI Required Gate`.
 - Yêu cầu review pull request trước khi merge.
 - Yêu cầu review CODEOWNERS cho các đường dẫn được bảo vệ.
-- Với `.github/workflows/**`, yêu cầu phê duyệt từ owner qua `CI Required Gate` (`WORKFLOW_OWNER_LOGINS`) và giới hạn quyền bypass branch/ruleset cho org owner.
-- Danh sách workflow-owner mặc định được cấu hình qua biến repository `WORKFLOW_OWNER_LOGINS` (xem CODEOWNERS cho maintainer hiện tại).
+- Với các đường dẫn CI/CD được quản trị (`.github/workflows/**`, `.github/codeql/**`, `.github/connectivity/**`, `.github/release/**`, `.github/security/**`, `.github/actionlint.yaml`, `.github/dependabot.yml`, `scripts/ci/**` và tài liệu CI governance), yêu cầu review phê duyệt tường minh từ `@chumyin` qua `CI Required Gate`.
 - Hủy bỏ approval cũ khi có commit mới được đẩy lên.
 - Hạn chế force-push trên các branch được bảo vệ.
-- Tất cả PR của contributor nhắm trực tiếp vào `master`.
 
 ---
 
@@ -125,7 +123,6 @@ Duy trì các quy tắc branch protection sau trên `master`:
 - `CI Required Gate` là merge gate.
 - PR chỉ thay đổi tài liệu sử dụng fast-path và bỏ qua các Rust job nặng.
 - PR không phải tài liệu phải vượt qua lint, test và kiểm tra smoke release build.
-- PR ảnh hưởng Rust sử dụng cùng bộ gate bắt buộc như push lên `master` (không có shortcut chỉ build trên PR).
 
 ### 4.3 Bước C: Review
 
@@ -216,7 +213,7 @@ Chúng tôi **không** yêu cầu contributor định lượng quyền sở hữ
 - Mục tiêu triage maintainer đầu tiên: trong vòng 48 giờ.
 - Nếu PR bị chặn, maintainer để lại một checklist hành động được.
 - Tự động hóa `stale` được dùng để giữ hàng đợi lành mạnh; maintainer có thể áp dụng `no-stale` khi cần.
-- Tự động hóa `pr-hygiene` kiểm tra các PR mở mỗi 12 giờ và đăng nhắc nhở khi PR không có commit mới trong 48+ giờ và rơi vào một trong hai trường hợp: đang tụt hậu so với `master` hoặc thiếu/thất bại `CI Required Gate` trên head commit.
+- Tự động hóa `pr-hygiene` kiểm tra các PR mở mỗi 12 giờ và đăng nhắc nhở khi PR không có commit mới trong 48+ giờ và hoặc là đang tụt hậu so với `main` hoặc thiếu/thất bại `CI Required Gate` trên head commit.
 
 ### 8.1 Kiểm soát ngân sách hàng đợi
 
@@ -273,7 +270,7 @@ Các thay đổi ở những khu vực này yêu cầu review chặt chẽ hơn 
 
 Nếu một PR đã merge gây ra hồi quy:
 
-1. Revert PR ngay lập tức trên `master`.
+1. Revert PR ngay lập tức trên `main`.
 2. Mở issue theo dõi với phân tích nguyên nhân gốc.
 3. Chỉ đưa lại bản sửa lỗi khi có test hồi quy.
 

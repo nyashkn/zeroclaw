@@ -2,7 +2,7 @@
 
 Describe this PR in 2-5 bullets:
 
-- Base branch target (`master` for all contributions):
+- Base branch target (`main` or `dev`; direct `main` PRs are allowed):
 - Problem:
 - Why it matters:
 - What changed:

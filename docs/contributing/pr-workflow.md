@@ -11,9 +11,9 @@ This document defines how ZeroClaw handles high PR volume while maintaining:
 
 Related references:
 
-- [`docs/README.md`](../README.md) for documentation taxonomy and navigation.
-- [`ci-map.md`](./ci-map.md) for per-workflow ownership, triggers, and triage flow.
-- [`reviewer-playbook.md`](./reviewer-playbook.md) for day-to-day reviewer execution.
+- [`docs/README.md`](./README.md) for documentation taxonomy and navigation.
+- [`docs/ci-map.md`](./ci-map.md) for per-workflow ownership, triggers, and triage flow.
+- [`docs/reviewer-playbook.md`](./reviewer-playbook.md) for day-to-day reviewer execution.
 
 ## 0. Summary
 
@@ -44,7 +44,7 @@ Go to:
 
 Go to:
 
-- [ci-map.md](./ci-map.md)
+- [docs/ci-map.md](./ci-map.md)
 - [Section 4.2](#42-step-b-validation)
 
 ### 1.3 High-risk path touched
@@ -55,7 +55,7 @@ Go to:
 Go to:
 
 - [Section 9](#9-security-and-stability-rules)
-- [reviewer-playbook.md](./reviewer-playbook.md)
+- [docs/reviewer-playbook.md](./reviewer-playbook.md)
 
 ### 1.4 PR is superseded or duplicate
 
@@ -93,17 +93,22 @@ Automation assists with triage and guardrails, but final merge accountability re
 
 ## 3. Required Repository Settings
 
-Maintain these branch protection rules on `master`:
+Maintain these branch protection rules on `dev` and `main`:
 
 - Require status checks before merge.
-- Require check `CI Required Gate`.
+- Require checks `CI Required Gate` and `Security Required Gate`.
+- Consider also requiring `CI Change Audit` and `CodeQL Analysis` for stricter CI/CD governance.
 - Require pull request reviews before merge.
+- Require at least 1 approving review.
+- Require approval after the most recent push.
 - Require CODEOWNERS review for protected paths.
-- For `.github/workflows/**`, require owner approval via `CI Required Gate` (`WORKFLOW_OWNER_LOGINS`) and keep branch/ruleset bypass limited to org owners.
-- Default workflow-owner allowlist is configured via the `WORKFLOW_OWNER_LOGINS` repository variable (see CODEOWNERS for current maintainers).
-- Dismiss stale approvals when new commits are pushed.
+- For CI/CD-related paths (`.github/workflows/**`, `.github/codeql/**`, `.github/connectivity/**`, `.github/release/**`, `.github/security/**`, `.github/actionlint.yaml`, `.github/dependabot.yml`, `scripts/ci/**`, and CI governance docs), require CODEOWNERS review with `@chumyin` ownership.
+- Keep bypass allowances empty by default (use time-boxed break-glass only when absolutely required).
+- Enforce branch protection for admins.
+- Require conversation resolution before merge.
 - Restrict force-push on protected branches.
-- All contributor PRs target `master` directly.
+- Route normal contributor PRs to `main` by default (`dev` is optional for dedicated integration batching).
+- Allow direct merges to `main` once required checks and review policy pass.
 
 ---
 
@@ -122,10 +127,10 @@ Maintain these branch protection rules on `master`:
 
 ### 4.2 Step B: Validation
 
-- `CI Required Gate` is the merge gate.
+- `CI Required Gate` and `Security Required Gate` are the merge gates.
 - Docs-only PRs use fast-path and skip heavy Rust jobs.
 - Non-doc PRs must pass lint, tests, and release build smoke check.
-- Rust-impacting PRs use the same required gate set as `master` pushes (no PR build-only shortcut).
+- Rust-impacting PRs use the same required gate set as `dev`/`main` pushes (no PR build-only shortcut).
 
 ### 4.3 Step C: Review
 
@@ -216,7 +221,7 @@ We do **not** require contributors to quantify AI-vs-human line ownership.
 - First maintainer triage target: within 48 hours.
 - If PR is blocked, maintainer leaves one actionable checklist.
 - `stale` automation is used to keep queue healthy; maintainers can apply `no-stale` when needed.
-- `pr-hygiene` automation checks open PRs every 12 hours and posts a nudge when a PR has no new commits for 48+ hours and is either behind `master` or missing/failing `CI Required Gate` on the head commit.
+- `pr-hygiene` automation checks open PRs every 12 hours and posts a nudge when a PR has no new commits for 48+ hours and is either behind `main` or missing/failing `CI Required Gate` on the head commit.
 
 ### 8.1 Queue budget controls
 
@@ -273,7 +278,7 @@ For agent-assisted contributions, reviewers should also verify the author demons
 
 If a merged PR causes regressions:
 
-1. Revert PR immediately on `master`.
+1. Revert PR immediately on `main`.
 2. Open a follow-up issue with root-cause analysis.
 3. Re-introduce fix only with regression tests.
 
@@ -352,7 +357,7 @@ This keeps context loss low and avoids repeated deep dives.
 
 ## 15. Related Docs
 
-- [README.md](../README.md) — documentation taxonomy and navigation.
+- [README.md](./README.md) — documentation taxonomy and navigation.
 - [ci-map.md](./ci-map.md) — CI workflow ownership and triage map.
 - [reviewer-playbook.md](./reviewer-playbook.md) — reviewer execution model.
 - [actions-source-policy.md](./actions-source-policy.md) — action source allowlist policy.

@@ -1,17 +1,23 @@
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
+  ChevronsLeftRightEllipsis,
   LayoutDashboard,
   MessageSquare,
   Wrench,
   Clock,
   Puzzle,
   Brain,
+  Smartphone,
   Settings,
   DollarSign,
   Activity,
   Stethoscope,
+  X,
 } from 'lucide-react';
 import { t } from '@/lib/i18n';
+
+const COLLAPSE_BUTTON_DELAY_MS = 1000;
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
@@ -20,67 +26,136 @@ const navItems = [
   { to: '/cron', icon: Clock, labelKey: 'nav.cron' },
   { to: '/integrations', icon: Puzzle, labelKey: 'nav.integrations' },
   { to: '/memory', icon: Brain, labelKey: 'nav.memory' },
+  { to: '/devices', icon: Smartphone, labelKey: 'nav.devices' },
   { to: '/config', icon: Settings, labelKey: 'nav.config' },
   { to: '/cost', icon: DollarSign, labelKey: 'nav.cost' },
   { to: '/logs', icon: Activity, labelKey: 'nav.logs' },
   { to: '/doctor', icon: Stethoscope, labelKey: 'nav.doctor' },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen: boolean;
+  isCollapsed: boolean;
+  onClose: () => void;
+  onToggleCollapse: () => void;
+}
+
+export default function Sidebar({
+  isOpen,
+  isCollapsed,
+  onClose,
+  onToggleCollapse,
+}: SidebarProps) {
+  const [showCollapseButton, setShowCollapseButton] = useState(false);
+
+  useEffect(() => {
+    const id = setTimeout(() => setShowCollapseButton(true), COLLAPSE_BUTTON_DELAY_MS);
+    return () => clearTimeout(id);
+  }, []);
+
   return (
-    <aside className="fixed top-0 left-0 h-screen w-60 flex flex-col" style={{ background: 'linear-gradient(180deg, #080818 0%, #050510 100%)' }}>
-      {/* Glow line on right edge */}
-      <div className="sidebar-glow-line" />
-
-      {/* Logo / Title */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-[#1a1a3e]/50">
-        <img
-          src="/_app/logo.png"
-          alt="ZeroClaw"
-          className="h-10 w-10 rounded-xl object-cover animate-pulse-glow"
-        />
-        <span className="text-lg font-bold text-gradient-blue tracking-wide">
-          ZeroClaw
-        </span>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-        {navItems.map(({ to, icon: Icon, labelKey }, idx) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) =>
-              [
-                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 animate-slide-in-left group',
-                isActive
-                  ? 'text-white shadow-[0_0_15px_rgba(0,128,255,0.2)]'
-                  : 'text-[#556080] hover:text-white hover:bg-[#0080ff08]',
-              ].join(' ')
-            }
-            style={({ isActive }) => ({
-              animationDelay: `${idx * 40}ms`,
-              ...(isActive ? { background: 'linear-gradient(135deg, rgba(0,128,255,0.15), rgba(0,128,255,0.05))' } : {}),
-            })}
-          >
-            {({ isActive }) => (
+    <>
+      <button
+        type="button"
+        aria-label="Close navigation"
+        onClick={onClose}
+        className={[
+          'fixed inset-0 z-30 bg-black/50 transition-opacity md:hidden',
+          isOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
+        ].join(' ')}
+      />
+      <aside
+        className={[
+          'fixed left-0 top-0 z-40 flex h-screen w-[86vw] max-w-[17.5rem] flex-col border-r border-[#1e2f5d] bg-[#050b1a]/95 backdrop-blur-xl',
+          'shadow-[0_0_50px_-25px_rgba(8,121,255,0.7)]',
+          'transform transition-[width,transform] duration-300 ease-out',
+          isOpen ? 'translate-x-0' : '-translate-x-full',
+          isCollapsed ? 'md:w-[6.25rem]' : 'md:w-[17.5rem]',
+          'md:translate-x-0',
+        ].join(' ')}
+      >
+        <div className="relative flex items-center justify-between border-b border-[#1a2d5e] px-4 py-4">
+          <div className="flex items-center gap-3 overflow-hidden">
+            {!isCollapsed && (
               <>
-                <Icon className={`h-5 w-5 flex-shrink-0 transition-colors duration-300 ${isActive ? 'text-[#0080ff]' : 'group-hover:text-[#0080ff80]'}`} />
-                <span>{t(labelKey)}</span>
-                {isActive && (
-                  <div className="ml-auto h-1.5 w-1.5 rounded-full bg-[#0080ff] glow-dot" />
-                )}
+                <div
+                  className="electric-brand-mark h-9 w-9 shrink-0 rounded-xl"
+                  role="img"
+                  aria-label="ZeroClaw"
+                >
+                  <span className="sr-only">ZeroClaw</span>
+                </div>
+                <span className="text-lg font-semibold tracking-[0.1em] text-white">
+                  ZeroClaw
+                </span>
               </>
             )}
-          </NavLink>
-        ))}
-      </nav>
+          </div>
 
-      {/* Footer */}
-      <div className="px-5 py-4 border-t border-[#1a1a3e]/50">
-        <p className="text-[10px] text-[#334060] tracking-wider uppercase">ZeroClaw Runtime</p>
-      </div>
-    </aside>
+          <div className="flex items-center gap-2">
+            {showCollapseButton && (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                aria-label={isCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+                className="hidden rounded-lg border border-[#2c4e97] bg-[#0a1b3f]/60 p-1.5 text-[#8bb9ff] transition hover:border-[#4f83ff] hover:text-white md:block"
+              >
+                <ChevronsLeftRightEllipsis className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close navigation"
+              className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white md:hidden"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+          {navItems.map(({ to, icon: Icon, labelKey }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === '/'}
+              onClick={onClose}
+              title={isCollapsed ? t(labelKey) : undefined}
+              className={({ isActive }) =>
+                [
+                  'group flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300',
+                  isActive
+                    ? 'border border-[#3a6de0] bg-[#0b2f80]/55 text-white shadow-[0_0_30px_-16px_rgba(72,140,255,0.95)]'
+                    : 'border border-transparent text-[#9bb7eb] hover:border-[#294a8d] hover:bg-[#07132f] hover:text-white',
+                ].join(' ')
+              }
+            >
+              <Icon className="h-5 w-5 shrink-0 transition-transform duration-300 group-hover:scale-110" />
+              <span
+                className={[
+                  'whitespace-nowrap transition-[opacity,transform,width] duration-300',
+                  isCollapsed ? 'w-0 -translate-x-3 opacity-0 md:invisible' : 'w-auto opacity-100',
+                ].join(' ')}
+              >
+                {t(labelKey)}
+              </span>
+            </NavLink>
+          ))}
+        </nav>
+
+        <div
+          className={[
+            'mx-3 mb-4 rounded-xl border border-[#1b3670] bg-[#071328]/80 px-3 py-3 text-xs text-[#89a9df] transition-all duration-300',
+            isCollapsed ? 'md:px-1.5 md:text-center' : '',
+          ].join(' ')}
+        >
+          <p className={isCollapsed ? 'hidden md:block' : ''}>Gateway + Dashboard</p>
+          <p className={isCollapsed ? 'text-[10px] uppercase tracking-widest' : 'mt-1 text-[#5f84cc]'}>
+            {isCollapsed ? 'UI' : 'Runtime Mode'}
+          </p>
+        </div>
+      </aside>
+    </>
   );
 }

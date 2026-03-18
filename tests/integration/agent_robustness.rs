@@ -7,9 +7,214 @@
 //! max iteration limits, and cascading tool failures using mock providers.
 //! Complements inline parse_tool_calls tests in `src/agent/loop_.rs`.
 
-use crate::support::helpers::{build_agent, text_response, tool_response};
-use crate::support::{CountingTool, EchoTool, FailingTool, MockProvider};
-use zeroclaw::providers::{ChatResponse, ToolCall};
+use anyhow::Result;
+use async_trait::async_trait;
+use serde_json::json;
+use std::sync::{Arc, Mutex};
+use zeroclaw::agent::agent::Agent;
+use zeroclaw::agent::dispatcher::NativeToolDispatcher;
+use zeroclaw::config::MemoryConfig;
+use zeroclaw::memory;
+use zeroclaw::memory::Memory;
+use zeroclaw::observability::{NoopObserver, Observer};
+use zeroclaw::providers::{ChatRequest, ChatResponse, Provider, ToolCall};
+use zeroclaw::tools::{Tool, ToolResult};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mock infrastructure
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct MockProvider {
+    responses: Mutex<Vec<ChatResponse>>,
+}
+
+impl MockProvider {
+    fn new(responses: Vec<ChatResponse>) -> Self {
+        Self {
+            responses: Mutex::new(responses),
+        }
+    }
+}
+
+#[async_trait]
+impl Provider for MockProvider {
+    async fn chat_with_system(
+        &self,
+        _system_prompt: Option<&str>,
+        _message: &str,
+        _model: &str,
+        _temperature: f64,
+    ) -> Result<String> {
+        Ok("fallback".into())
+    }
+
+    async fn chat(
+        &self,
+        _request: ChatRequest<'_>,
+        _model: &str,
+        _temperature: f64,
+    ) -> Result<ChatResponse> {
+        let mut guard = self.responses.lock().unwrap();
+        if guard.is_empty() {
+            return Ok(ChatResponse {
+                text: Some("done".into()),
+                tool_calls: vec![],
+                usage: None,
+                reasoning_content: None,
+                quota_metadata: None,
+                stop_reason: None,
+                raw_stop_reason: None,
+            });
+        }
+        Ok(guard.remove(0))
+    }
+}
+
+struct EchoTool;
+
+#[async_trait]
+impl Tool for EchoTool {
+    fn name(&self) -> &str {
+        "echo"
+    }
+    fn description(&self) -> &str {
+        "Echoes the input message"
+    }
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "message": {"type": "string"}
+            }
+        })
+    }
+    async fn execute(&self, args: serde_json::Value) -> Result<ToolResult> {
+        let msg = args
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("(empty)")
+            .to_string();
+        Ok(ToolResult {
+            success: true,
+            output: msg,
+            error: None,
+        })
+    }
+}
+
+/// Tool that always fails, simulating a broken external service
+struct FailingTool;
+
+#[async_trait]
+impl Tool for FailingTool {
+    fn name(&self) -> &str {
+        "failing_tool"
+    }
+    fn description(&self) -> &str {
+        "Always fails"
+    }
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({"type": "object"})
+    }
+    async fn execute(&self, _args: serde_json::Value) -> Result<ToolResult> {
+        Ok(ToolResult {
+            success: false,
+            output: String::new(),
+            error: Some("Service unavailable: connection timeout".into()),
+        })
+    }
+}
+
+/// Tool that tracks invocations
+struct CountingTool {
+    count: Arc<Mutex<usize>>,
+}
+
+impl CountingTool {
+    fn new() -> (Self, Arc<Mutex<usize>>) {
+        let count = Arc::new(Mutex::new(0));
+        (
+            Self {
+                count: count.clone(),
+            },
+            count,
+        )
+    }
+}
+
+#[async_trait]
+impl Tool for CountingTool {
+    fn name(&self) -> &str {
+        "counter"
+    }
+    fn description(&self) -> &str {
+        "Counts invocations"
+    }
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({"type": "object"})
+    }
+    async fn execute(&self, _args: serde_json::Value) -> Result<ToolResult> {
+        let mut c = self.count.lock().unwrap();
+        *c += 1;
+        Ok(ToolResult {
+            success: true,
+            output: format!("call #{}", *c),
+            error: None,
+        })
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn make_memory() -> Arc<dyn Memory> {
+    let cfg = MemoryConfig {
+        backend: "none".into(),
+        ..MemoryConfig::default()
+    };
+    Arc::from(memory::create_memory(&cfg, &std::env::temp_dir(), None).unwrap())
+}
+
+fn make_observer() -> Arc<dyn Observer> {
+    Arc::from(NoopObserver {})
+}
+
+fn text_response(text: &str) -> ChatResponse {
+    ChatResponse {
+        text: Some(text.into()),
+        tool_calls: vec![],
+        usage: None,
+        reasoning_content: None,
+        quota_metadata: None,
+        stop_reason: None,
+        raw_stop_reason: None,
+    }
+}
+
+fn tool_response(calls: Vec<ToolCall>) -> ChatResponse {
+    ChatResponse {
+        text: Some(String::new()),
+        tool_calls: calls,
+        usage: None,
+        reasoning_content: None,
+        quota_metadata: None,
+        stop_reason: None,
+        raw_stop_reason: None,
+    }
+}
+
+fn build_agent(provider: Box<dyn Provider>, tools: Vec<Box<dyn Tool>>) -> Agent {
+    Agent::builder()
+        .provider(provider)
+        .tools(tools)
+        .memory(make_memory())
+        .observer(make_observer())
+        .tool_dispatcher(Box::new(NativeToolDispatcher))
+        .workspace_dir(std::env::temp_dir())
+        .build()
+        .unwrap()
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // TG4.1: Malformed tool call recovery
@@ -119,14 +324,14 @@ async fn agent_handles_mixed_tool_success_and_failure() {
 // TG4.3: Iteration limit enforcement (#777)
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Agent should not exceed max_tool_iterations (default=10) even with
+/// Agent should not exceed max_tool_iterations (default=20) even with
 /// a provider that keeps returning tool calls
 #[tokio::test]
 async fn agent_respects_max_tool_iterations() {
     let (counting_tool, count) = CountingTool::new();
 
-    // Create 20 tool call responses - more than the default limit of 10
-    let mut responses: Vec<ChatResponse> = (0..20)
+    // Create 30 tool call responses - more than the default limit of 20
+    let mut responses: Vec<ChatResponse> = (0..30)
         .map(|i| {
             tool_response(vec![ToolCall {
                 id: format!("tc_{i}"),
@@ -148,8 +353,8 @@ async fn agent_respects_max_tool_iterations() {
 
     let invocations = *count.lock().unwrap();
     assert!(
-        invocations <= 10,
-        "tool invocations ({invocations}) should not exceed default max_tool_iterations (10)"
+        invocations <= 20,
+        "tool invocations ({invocations}) should not exceed default max_tool_iterations (20)"
     );
 }
 
@@ -165,6 +370,9 @@ async fn agent_handles_empty_provider_response() {
         tool_calls: vec![],
         usage: None,
         reasoning_content: None,
+        quota_metadata: None,
+        stop_reason: None,
+        raw_stop_reason: None,
     }]));
 
     let mut agent = build_agent(provider, vec![Box::new(EchoTool)]);
@@ -180,6 +388,9 @@ async fn agent_handles_none_text_response() {
         tool_calls: vec![],
         usage: None,
         reasoning_content: None,
+        quota_metadata: None,
+        stop_reason: None,
+        raw_stop_reason: None,
     }]));
 
     let mut agent = build_agent(provider, vec![Box::new(EchoTool)]);
@@ -250,5 +461,143 @@ async fn agent_handles_sequential_tool_then_text() {
     assert!(
         !response.is_empty(),
         "should produce final text after tool execution"
+    );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TG4.6: Loop detection
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// No-progress repeat: provider returns same tool call every turn with identical
+/// output (EchoTool with fixed input).  Loop detection should stop early.
+#[tokio::test]
+async fn loop_detection_no_progress_repeat_stops_early() {
+    let responses: Vec<ChatResponse> = (0..10)
+        .map(|i| {
+            tool_response(vec![ToolCall {
+                id: format!("tc_{i}"),
+                name: "echo".into(),
+                arguments: r#"{"message": "same"}"#.into(),
+            }])
+        })
+        .collect();
+
+    let provider = Box::new(MockProvider::new(responses));
+    let mut agent = build_agent(provider, vec![Box::new(EchoTool)]);
+    let result = agent.turn("repeat forever").await;
+    assert!(result.is_err(), "should error due to loop detection");
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("detected loop pattern"),
+        "error should mention loop pattern: {err_msg}"
+    );
+}
+
+/// Repeated calls with *different* outputs should NOT trigger loop detection.
+/// EchoTool returns the input, so varying inputs → varying outputs = progress.
+#[tokio::test]
+async fn loop_detection_different_outputs_no_false_positive() {
+    let mut responses: Vec<ChatResponse> = (0..5)
+        .map(|i| {
+            tool_response(vec![ToolCall {
+                id: format!("tc_{i}"),
+                name: "echo".into(),
+                arguments: format!(r#"{{"message": "msg_{i}"}}"#),
+            }])
+        })
+        .collect();
+    responses.push(text_response("All done"));
+
+    let provider = Box::new(MockProvider::new(responses));
+    let mut agent = build_agent(provider, vec![Box::new(EchoTool)]);
+    let result = agent.turn("varying calls").await;
+    assert!(
+        result.is_ok(),
+        "should complete normally with varying outputs: {:?}",
+        result.err()
+    );
+}
+
+/// Ping-pong: alternating between two tools with fixed input/output.
+#[tokio::test]
+async fn loop_detection_ping_pong_stops_early() {
+    // A-B-A-B-A-B pattern (3 cycles, threshold=2)
+    let mut responses: Vec<ChatResponse> = Vec::new();
+    for i in 0..6 {
+        let (name, args) = if i % 2 == 0 {
+            ("echo", r#"{"message": "ping"}"#)
+        } else {
+            ("echo", r#"{"message": "pong"}"#)
+        };
+        responses.push(tool_response(vec![ToolCall {
+            id: format!("tc_{i}"),
+            name: name.into(),
+            arguments: args.into(),
+        }]));
+    }
+
+    // Note: ping-pong detection works when tool names differ OR args differ.
+    // Here we use same tool with different args, which counts as different signatures.
+    let provider = Box::new(MockProvider::new(responses));
+    let mut agent = build_agent(provider, vec![Box::new(EchoTool)]);
+    let result = agent.turn("ping pong").await;
+    // The detector should fire (warning then hard stop) within the iterations
+    assert!(
+        result.is_err(),
+        "should error due to ping-pong loop detection"
+    );
+}
+
+/// Consecutive failures trigger loop detection.
+#[tokio::test]
+async fn loop_detection_failure_streak_stops_early() {
+    let responses: Vec<ChatResponse> = (0..10)
+        .map(|i| {
+            tool_response(vec![ToolCall {
+                id: format!("tc_{i}"),
+                name: "failing_tool".into(),
+                arguments: "{}".into(),
+            }])
+        })
+        .collect();
+
+    let provider = Box::new(MockProvider::new(responses));
+    let mut agent = build_agent(provider, vec![Box::new(FailingTool)]);
+    let result = agent.turn("keep failing").await;
+    assert!(
+        result.is_err(),
+        "should error due to failure streak detection"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("detected loop pattern"),
+        "error should mention loop pattern: {err_msg}"
+    );
+}
+
+/// Normal varied tool usage should not trigger any detection.
+#[tokio::test]
+async fn loop_detection_normal_flow_no_false_positive() {
+    let responses = vec![
+        tool_response(vec![ToolCall {
+            id: "tc1".into(),
+            name: "echo".into(),
+            arguments: r#"{"message": "hello"}"#.into(),
+        }]),
+        tool_response(vec![ToolCall {
+            id: "tc2".into(),
+            name: "echo".into(),
+            arguments: r#"{"message": "world"}"#.into(),
+        }]),
+        text_response("Final answer"),
+    ];
+
+    let provider = Box::new(MockProvider::new(responses));
+    let mut agent = build_agent(provider, vec![Box::new(EchoTool)]);
+    let result = agent.turn("normal usage").await;
+    assert!(
+        result.is_ok(),
+        "normal varied flow should complete: {:?}",
+        result.err()
     );
 }

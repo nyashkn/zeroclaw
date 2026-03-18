@@ -8,10 +8,10 @@ This guide covers testing the Telegram channel integration for ZeroClaw.
 
 ```bash
 # Full test suite (20+ tests, ~2 minutes)
-./tests/telegram/test_telegram_integration.sh
+./test_telegram_integration.sh
 
 # Quick smoke test (~10 seconds)
-./tests/telegram/quick_test.sh
+./quick_test.sh
 
 # Just unit tests
 cargo test telegram --lib
@@ -115,6 +115,9 @@ After running automated tests, perform these manual checks:
     - Send message with @botname mention
     - Verify: Bot responds and mention is stripped
     - DM/private chat should always work regardless of mention_only
+    - Regression check (group non-text): verify group media without mention does not trigger bot reply
+    - Regression command:
+      `cargo test -q telegram_mention_only_group_photo_without_caption_is_ignored`
 
 6. **Error logging**
 
@@ -176,7 +179,7 @@ Solution: Verify code changes
 
 ```bash
 # 1. Run automated tests
-./tests/telegram/test_telegram_integration.sh
+./test_telegram_integration.sh
 
 # 2. Configure Telegram
 zeroclaw onboard --interactive
@@ -197,10 +200,10 @@ zeroclaw channel start
 
 ```bash
 # 1. Quick validation
-./tests/telegram/quick_test.sh
+./quick_test.sh
 
 # 2. Full test suite
-./tests/telegram/test_telegram_integration.sh
+./test_telegram_integration.sh
 
 # 3. Manual smoke test
 zeroclaw channel start
@@ -211,7 +214,7 @@ zeroclaw channel start
 
 ```bash
 # 1. Full test suite
-./tests/telegram/test_telegram_integration.sh
+./test_telegram_integration.sh
 
 # 2. Load test (optional)
 # Send 100 messages rapidly
@@ -297,7 +300,7 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: [self-hosted, aws-india]
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -315,8 +318,8 @@ jobs:
 
 Before merging code:
 
-- [ ] `./tests/telegram/quick_test.sh` passes
-- [ ] `./tests/telegram/test_telegram_integration.sh` passes
+- [ ] `./quick_test.sh` passes
+- [ ] `./test_telegram_integration.sh` passes
 - [ ] Manual tests completed
 - [ ] No new clippy warnings
 - [ ] Code is formatted (`cargo fmt`)
@@ -347,6 +350,6 @@ zeroclaw channel doctor
 ## 📚 Additional Resources
 
 - [Telegram Bot API Documentation](https://core.telegram.org/bots/api)
-- [ZeroClaw Main README](../../README.md)
-- [Contributing Guide](../../CONTRIBUTING.md)
+- [ZeroClaw Main README](README.md)
+- [Contributing Guide](CONTRIBUTING.md)
 - [Issue Tracker](https://github.com/zeroclaw-labs/zeroclaw/issues)

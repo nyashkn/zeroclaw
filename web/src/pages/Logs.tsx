@@ -131,7 +131,7 @@ export default function Logs() {
       : entries.filter((e) => typeFilters.has(e.event.type));
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+    <div className="flex min-h-[28rem] flex-col h-[calc(100dvh-8.5rem)]">
       {/* Toolbar */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-[#1a1a3e]/40 animate-fade-in" style={{ background: 'linear-gradient(90deg, rgba(8,8,24,0.9), rgba(5,5,16,0.9))' }}>
         <div className="flex items-center gap-3">
