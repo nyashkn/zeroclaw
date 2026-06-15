@@ -201,6 +201,40 @@ impl NativeResponseMessage {
     }
 }
 
+/// Recover tool calls a model emitted as content text instead of in the native
+/// `tool_calls` field. Some models ignore the tools schema and wrap calls in
+/// model-specific markup — `<tool_call>…</tool_call>`, plural
+/// `<tool_calls>[…]</tool_calls>`, deepseek `<｜tool▁calls▁begin｜>`, minimax
+/// invoke syntax, GLM shorthand, etc. The native parser only reads the
+/// structured field, so these are dropped and the agent loop stalls.
+///
+/// Delegates to the shared, battle-tested `zeroclaw_tool_call_parser`
+/// (already used by the runtime agent loop and channels) so every dialect it
+/// knows is handled here too. Returns the recovered calls plus the text with
+/// their spans removed. Only call this when the native `tool_calls` field came
+/// back empty.
+fn recover_embedded_tool_calls(text: &str) -> (String, Vec<ProviderToolCall>) {
+    let (cleaned, parsed) = zeroclaw_tool_call_parser::parse_tool_calls(text);
+    let calls = parsed
+        .into_iter()
+        .map(|pc| ProviderToolCall {
+            id: pc
+                .tool_call_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            name: pc.name,
+            // The runtime later does `from_str` on this, so arguments must be a
+            // JSON-object string: pass a model-provided string through as-is,
+            // otherwise serialize the parsed value.
+            arguments: match pc.arguments {
+                serde_json::Value::String(s) => s,
+                other => other.to_string(),
+            },
+            extra_content: None,
+        })
+        .collect();
+    (cleaned, calls)
+}
+
 impl OpenAiModelProvider {
     pub fn new(alias: &str, credential: Option<&str>) -> Self {
         Self::with_base_url(alias, None, credential)
@@ -345,9 +379,9 @@ impl OpenAiModelProvider {
     }
 
     fn parse_native_response(message: NativeResponseMessage) -> ProviderChatResponse {
-        let text = message.effective_content();
+        let mut text = message.effective_content();
         let reasoning_content = message.reasoning_content.clone();
-        let tool_calls = message
+        let mut tool_calls = message
             .tool_calls
             .unwrap_or_default()
             .into_iter()
@@ -358,6 +392,21 @@ impl OpenAiModelProvider {
                 extra_content: None,
             })
             .collect::<Vec<_>>();
+
+        // Fallback: when the native field is empty, some models still emit tool
+        // calls as content-text markup that would otherwise be dropped, stalling
+        // the agent loop. Recover them and strip their spans from the text.
+        if tool_calls.is_empty() {
+            let recovery = text.as_deref().and_then(|t| {
+                let (cleaned, recovered) = recover_embedded_tool_calls(t);
+                (!recovered.is_empty()).then_some((cleaned, recovered))
+            });
+            if let Some((cleaned, recovered)) = recovery {
+                tool_calls = recovered;
+                let trimmed = cleaned.trim();
+                text = (!trimmed.is_empty()).then(|| trimmed.to_string());
+            }
+        }
 
         ProviderChatResponse {
             text,
@@ -1118,6 +1167,89 @@ impl ::zeroclaw_api::attribution::Attributable for OpenAiResponsesModelProvider 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn nrm(content: Option<&str>) -> NativeResponseMessage {
+        NativeResponseMessage {
+            content: content.map(ToString::to_string),
+            reasoning_content: None,
+            tool_calls: None,
+        }
+    }
+
+    #[test]
+    fn recovers_xml_tool_call_from_content() {
+        let msg = nrm(Some(
+            "ok\n<tool_call>{\"name\": \"sop_advance\", \"arguments\": {\"run_id\": \"r1\", \"status\": \"completed\"}}</tool_call>",
+        ));
+        let r = OpenAiModelProvider::parse_native_response(msg);
+        assert_eq!(r.tool_calls.len(), 1);
+        assert_eq!(r.tool_calls[0].name, "sop_advance");
+        assert!(r.tool_calls[0].arguments.contains("\"run_id\":\"r1\""));
+        assert_eq!(r.text.as_deref(), Some("ok"));
+    }
+
+    #[test]
+    fn recovers_plural_tool_calls_array() {
+        let msg = nrm(Some(
+            "<tool_calls>[{\"name\":\"a\",\"arguments\":{}},{\"name\":\"b\",\"arguments\":{\"x\":1}}]</tool_calls>",
+        ));
+        let r = OpenAiModelProvider::parse_native_response(msg);
+        assert_eq!(r.tool_calls.len(), 2);
+        assert_eq!(r.tool_calls[0].name, "a");
+        assert_eq!(r.tool_calls[1].name, "b");
+    }
+
+    #[test]
+    fn recovers_minimax_style_wrapper() {
+        // minimax wraps the JSON in proprietary delimiters; the scanner ignores
+        // the delimiters and finds the embedded object.
+        let msg = nrm(Some(
+            "]<]minimax[>[<tool_call>{\"name\": \"shell\", \"arguments\": {\"command\": \"ls\"}}",
+        ));
+        let r = OpenAiModelProvider::parse_native_response(msg);
+        assert_eq!(r.tool_calls.len(), 1);
+        assert_eq!(r.tool_calls[0].name, "shell");
+    }
+
+    #[test]
+    fn recovers_nested_function_shape() {
+        let msg = nrm(Some(
+            "<tool_call>{\"function\": {\"name\": \"f\", \"arguments\": \"{\\\"k\\\":1}\"}}</tool_call>",
+        ));
+        let r = OpenAiModelProvider::parse_native_response(msg);
+        assert_eq!(r.tool_calls.len(), 1);
+        assert_eq!(r.tool_calls[0].name, "f");
+        assert_eq!(r.tool_calls[0].arguments, "{\"k\":1}");
+    }
+
+    #[test]
+    fn leaves_plain_json_in_text_untouched() {
+        // A prose object with no arguments field is NOT a tool call.
+        let msg = nrm(Some("result: {\"name\": \"widget\", \"count\": 3}"));
+        let r = OpenAiModelProvider::parse_native_response(msg);
+        assert!(r.tool_calls.is_empty());
+        assert_eq!(r.text.as_deref(), Some("result: {\"name\": \"widget\", \"count\": 3}"));
+    }
+
+    #[test]
+    fn native_tool_calls_skip_recovery() {
+        let msg = NativeResponseMessage {
+            content: Some("<tool_call>{\"name\":\"x\",\"arguments\":{}}</tool_call>".to_string()),
+            reasoning_content: None,
+            tool_calls: Some(vec![NativeToolCall {
+                id: Some("id1".to_string()),
+                kind: Some("function".to_string()),
+                function: NativeFunctionCall {
+                    name: "real".to_string(),
+                    arguments: "{}".to_string(),
+                },
+            }]),
+        };
+        let r = OpenAiModelProvider::parse_native_response(msg);
+        // Native field wins; content-text recovery does not run.
+        assert_eq!(r.tool_calls.len(), 1);
+        assert_eq!(r.tool_calls[0].name, "real");
+    }
 
     #[test]
     fn creates_with_key() {
